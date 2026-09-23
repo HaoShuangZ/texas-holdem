@@ -9,8 +9,10 @@ export interface GameContext {
   pot: number
   currentBet: number
   myBet: number
+  myTotalBet: number // 本手已投入总额（跨轮累计）
   myChips: number
   minRaise: number // minimum raise INCREMENT from engine
+  betCap: number // 单手投入上限（免上头），0=不限制
   numOpponents: number
   phase: string
   position: string
@@ -55,6 +57,9 @@ async function claudeDecision(
   const callAmount = context.currentBet - context.myBet
   const potOdds = calculatePotOdds(callAmount, context.pot)
   const minRaiseTotal = context.currentBet + context.minRaise
+  const capMax = context.betCap > 0
+    ? context.myBet + (context.betCap - context.myTotalBet)
+    : Infinity
 
   const handEval = context.communityCards.length >= 3
     ? evaluateHand([...context.holeCards, ...context.communityCards])
@@ -68,6 +73,7 @@ async function claudeDecision(
 - 当前下注: ${context.currentBet}（你已下注 ${context.myBet}，需要跟注 ${callAmount}）
 - 你的筹码: ${context.myChips}
 - 最小加注总额: ${minRaiseTotal}
+${context.betCap > 0 ? `- 单手投入上限: ${context.betCap}（你本手已投入 ${context.myTotalBet}，本条街最多加注到 ${capMax}）` : ''}
 - 对手数量: ${context.numOpponents}
 - 你的位置: ${context.position}
 ${handEval ? `- 当前牌型: ${handEval.handName}` : ''}
@@ -86,12 +92,19 @@ ${callAmount > 0 ? `- {"type":"call"}` : ''}
 
 只回复 JSON，不要任何其他文字。`
 
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 100,
-    system: personality.prompt,
-    messages: [{ role: 'user', content: prompt }],
-  })
+  // 10s 超时保护：API 挂起时回退到本地规则，避免 AI 回合无限等待
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const response = await Promise.race([
+    client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 100,
+      system: personality.prompt,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Claude API timeout')), 10_000)
+    }),
+  ]).finally(() => clearTimeout(timer))
 
   const text = response.content[0].type === 'text' ? response.content[0].text : ''
   try {
@@ -102,7 +115,7 @@ ${callAmount > 0 ? `- {"type":"call"}` : ''}
     }
   } catch {}
 
-  return fallbackDecision(personality, context, equity)
+  return validateAction(fallbackDecision(personality, context, equity), context)
 }
 
 /** Rule-based fallback decision when Claude is unavailable */
@@ -155,11 +168,17 @@ function fallbackDecision(
   return { type: 'fold' }
 }
 
-/** Validate and clamp an AI action to be legal */
+/** Validate and clamp an AI action to be legal (including 免上头 betCap) */
 function validateAction(action: AIAction, context: GameContext): AIAction {
   const callAmount = context.currentBet - context.myBet
   const minRaiseTotal = context.currentBet + context.minRaise
   const maxBet = context.myBet + context.myChips
+  // 免上头上限内本条街允许的最大下注目标（与引擎 clamp 规则一致）
+  const capMax = context.betCap > 0
+    ? context.myBet + (context.betCap - context.myTotalBet)
+    : Infinity
+  // 无法再投入时的安全动作
+  const safeAction = (): AIAction => (callAmount > 0 ? { type: 'call' } : { type: 'check' })
 
   switch (action.type) {
     case 'check':
@@ -170,12 +189,20 @@ function validateAction(action: AIAction, context: GameContext): AIAction {
       if (callAmount >= context.myChips) return { type: 'allIn' }
       return action
     case 'raise': {
+      if (capMax <= 0) return safeAction()
       let amount = action.amount ?? minRaiseTotal
       if (amount < minRaiseTotal) amount = minRaiseTotal
       if (amount > maxBet) return { type: 'allIn' }
+      if (amount > capMax) {
+        // 被上限压到低于最小加注额度时，引擎会拒绝，降级为跟注/过牌
+        if (capMax >= minRaiseTotal) amount = capMax
+        else return safeAction()
+      }
       return { type: 'raise', amount }
     }
     case 'allIn':
+      // 本手投入已达上限，引擎会拒绝 allIn，降级为跟注/过牌
+      if (capMax <= 0) return safeAction()
       return action
     case 'fold':
       if (callAmount === 0) return { type: 'check' } // Never fold for free
@@ -208,6 +235,7 @@ export async function makeDecision(
     return await claudeDecision(personality, context, equity)
   } catch (e) {
     console.log(`[AI] Claude unavailable, using fallback:`, (e as Error).message)
-    return fallbackDecision(personality, context, equity)
+    // fallback 结果同样要过合法性校验（含 betCap 降级），防止引擎拒绝后卡局
+    return validateAction(fallbackDecision(personality, context, equity), context)
   }
 }

@@ -368,20 +368,28 @@ export class WsHandler {
   }
 
   /** Process a player action (human or AI) and handle phase transitions */
-  private processAction(roomId: string, seatIndex: number, type: 'fold' | 'check' | 'call' | 'raise' | 'allIn', amount?: number, nickname?: string): void {
+  private processAction(roomId: string, seatIndex: number, type: 'fold' | 'check' | 'call' | 'raise' | 'allIn', amount?: number, nickname?: string, isRetry = false): void {
     const engine = this.roomManager.getEngine(roomId)
     if (!engine) return
     const room = this.roomManager.getRoom(roomId)
     if (!room) return
 
-    this.clearTurnTimer(roomId)
-
     const prevPhase = engine.getPhase()
     const success = engine.handleAction(seatIndex, type, amount)
     if (!success) {
       console.error(`[Engine] Action rejected: seat=${seatIndex} type=${type} amount=${amount} currentTurn=${engine.getState().currentTurn} phase=${prevPhase}`)
+      // 兜底：行动被引擎拒绝时（如受免上头上限约束），改用安全动作重试一次。
+      // AI 回合没有超时器，若不兜底会导致整局卡死。
+      if (!isRetry && engine.getState().currentTurn === seatIndex) {
+        const hand = engine.getPlayerHandStates().find(h => h.seatIndex === seatIndex)
+        const callAmount = engine.getCurrentBet() - (hand?.bet ?? 0)
+        const safeType = callAmount > 0 ? 'call' : 'check'
+        console.warn(`[Engine] Fallback action for seat=${seatIndex}: ${safeType}`)
+        this.processAction(roomId, seatIndex, safeType, undefined, nickname, true)
+      }
       return
     }
+    this.clearTurnTimer(roomId)
 
     // Log action
     const history = this.actionHistory.get(roomId) ?? []

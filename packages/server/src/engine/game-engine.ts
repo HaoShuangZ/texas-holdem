@@ -526,6 +526,10 @@ export class GameEngine {
     return this.minRaise
   }
 
+  getBetCap(): number {
+    return this.betCap
+  }
+
   getPhase(): GamePhase {
     return this.state.phase
   }
