@@ -5,6 +5,7 @@ import type { RoomManager } from '../rooms/room-manager'
 import type { RoomConfig } from '@texas-holdem/shared'
 import type { UserRepository } from '../db/user-repository'
 import { signToken, verifyToken } from '../auth/jwt'
+import { adminHtml } from '../admin-page'
 
 export function createApi(roomManager: RoomManager, userRepo: UserRepository) {
   const app = new Hono()
@@ -13,7 +14,10 @@ export function createApi(roomManager: RoomManager, userRepo: UserRepository) {
 
   app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
-  // --- Auth ---
+  // 管理后台页面
+  app.get('/admin', (c) => c.html(adminHtml))
+
+  // --- Auth（已关闭开放注册，账号由管理员在 /admin 创建） ---
   app.post('/api/auth/login', async (c) => {
     const { username, password, avatar } = await c.req.json<{
       username: string
@@ -26,15 +30,105 @@ export function createApi(roomManager: RoomManager, userRepo: UserRepository) {
     }
 
     try {
-      const { user, isNewUser } = await userRepo.loginOrRegister(
-        username.trim(),
-        password,
-        avatar ?? ''
-      )
+      const user = await userRepo.login(username.trim(), password)
+      if (avatar) await userRepo.updateAvatar(user.id, avatar)
       const token = signToken({ userId: user.id, username: user.username })
-      return c.json({ token, user, isNewUser })
+      // 记录登录 IP（经 nginx 反代，真实 IP 在 X-Real-IP / X-Forwarded-For）
+      const ip = c.req.header('x-real-ip')
+        || c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+        || ''
+      const ua = c.req.header('user-agent') || ''
+      await userRepo.logLogin(user.id, user.username, ip, ua)
+      return c.json({ token, user, isNewUser: false })
     } catch (e: any) {
       return c.json({ error: e.message }, 401)
+    }
+  })
+
+  // --- Admin（管理后台，密码保护） ---
+  function requireAdmin(c: any): boolean {
+    const expected = process.env.ADMIN_PASSWORD
+    if (!expected) return false
+    return c.req.header('x-admin-password') === expected
+  }
+
+  app.get('/api/admin/users', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    return c.json({ users: await userRepo.listUsers() })
+  })
+
+  app.post('/api/admin/users', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    try {
+      const { username, password, chips } = await c.req.json<{
+        username: string; password: string; chips?: number
+      }>()
+      const user = await userRepo.createUser(username?.trim() ?? '', password, chips)
+      return c.json({ user })
+    } catch (e: any) {
+      return c.json({ error: e.message }, 400)
+    }
+  })
+
+  app.post('/api/admin/users/:id/password', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    try {
+      const { password } = await c.req.json<{ password: string }>()
+      await userRepo.resetPassword(c.req.param('id'), password)
+      return c.json({ ok: true })
+    } catch (e: any) {
+      return c.json({ error: e.message }, 400)
+    }
+  })
+
+  app.post('/api/admin/users/:id/chips', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    try {
+      const { chips } = await c.req.json<{ chips: number }>()
+      const target = Math.max(0, Math.floor(chips) || 0)
+      const before = await userRepo.findById(c.req.param('id'))
+      await userRepo.setChips(c.req.param('id'), target)
+      if (before && target !== before.chips_balance) {
+        await userRepo.logChips(before.id, before.username, target - before.chips_balance, target, '管理员调整', '')
+      }
+      return c.json({ ok: true })
+    } catch (e: any) {
+      return c.json({ error: e.message }, 400)
+    }
+  })
+
+  app.delete('/api/admin/users/:id', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    await userRepo.deleteUser(c.req.param('id'))
+    return c.json({ ok: true })
+  })
+
+  app.get('/api/admin/login-logs', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    return c.json({ logs: await userRepo.listLoginLogs(100) })
+  })
+
+  app.get('/api/admin/chip-logs', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    return c.json({ logs: await userRepo.listChipLogs(100) })
+  })
+
+  app.get('/api/admin/settings', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    const maxBet = await userRepo.getSetting('max_bet')
+    return c.json({ maxBet: maxBet ? Number(maxBet) : 0 })
+  })
+
+  app.post('/api/admin/settings', async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: 'Unauthorized' }, 401)
+    try {
+      const { maxBet } = await c.req.json<{ maxBet: number }>()
+      const v = Math.max(0, Math.floor(Number(maxBet) || 0))
+      if (v > 100000000) throw new Error('上限过大')
+      await userRepo.setSetting('max_bet', String(v))
+      return c.json({ ok: true, maxBet: v })
+    } catch (e: any) {
+      return c.json({ error: e.message }, 400)
     }
   })
 

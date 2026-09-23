@@ -276,7 +276,7 @@ export class WsHandler {
     if (!room || room.status !== 'waiting') return
     const playersWithChips = [...room.players.values()].filter(p => p.chips > 0)
     if (playersWithChips.length >= 2 && playersWithChips.every(p => p.isReady)) {
-      this.doStartGame(roomId, room.hostId)
+      this.doStartGame(roomId, room.hostId).catch(err => console.error(`[Game] auto start failed:`, err))
     }
   }
 
@@ -285,19 +285,35 @@ export class WsHandler {
       this.send(ws, 'error', { message: 'Not in a room' })
       return
     }
-    try {
-      this.doStartGame(conn.roomId, conn.playerId)
-    } catch (err: any) {
-      this.send(ws, 'error', { message: err.message ?? 'Failed to start game' })
-    }
+    this.doStartGame(conn.roomId, conn.playerId).catch(err =>
+      this.send(ws, 'error', { message: err?.message ?? 'Failed to start game' }))
   }
 
-  private doStartGame(roomId: string, requesterId: string): void {
+  private async doStartGame(roomId: string, requesterId: string): Promise<void> {
     this.roomManager.startGame(roomId, requesterId)
     this.actionHistory.set(roomId, [])
 
     const room = this.roomManager.getRoom(roomId)!
     const engine = this.roomManager.getEngine(roomId)!
+
+    // 免上头保护：读取全局单手投入上限并注入引擎（同步进房间配置，客户端据此限制滑条）
+    try {
+      const capStr = await this.userRepo.getSetting('max_bet')
+      const cap = capStr ? Number(capStr) : 0
+      if (cap > 0) {
+        engine.setBetCap(cap)
+        if (cap >= room.config.blinds.big) {
+          room.config.betCap = cap
+        }
+      }
+    } catch { /* 读不到设置则不限制 */ }
+
+    // 把带 betCap 的房间配置同步给所有客户端（滑条/全下按钮据此限制）
+    const roomStateNow = this.roomManager.getRoomState(roomId)
+    if (roomStateNow) {
+      this.broadcastToRoom(roomId, 'room-state', { room: roomStateNow, hands: engine.getPlayerHandStates() })
+    }
+
     const gameState = engine.getState()
 
     this.broadcastToRoom(roomId, 'game-start', {
@@ -616,10 +632,14 @@ export class WsHandler {
 
         if (!this.aiManager.isAI(p.id)) {
           // Write current chips directly as the user's balance
+          const user = await this.userRepo.findById(p.id)
           await this.userRepo.updateChips(p.id, p.chips)
           await this.userRepo.incrementGames(p.id)
           if (p.chips > prevChips) {
             await this.userRepo.incrementWins(p.id)
+          }
+          if (user && p.chips !== prevChips) {
+            await this.userRepo.logChips(user.id, user.username, p.chips - prevChips, p.chips, '对局结算', `房间 ${currentRoom.code}`)
           }
           console.log(`[Chips] ${p.nickname}: ${prevChips} → ${p.chips}`)
         }

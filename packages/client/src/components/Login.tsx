@@ -100,7 +100,7 @@ export function Login() {
             className="text-4xl font-black tracking-[0.15em] text-[#d4a843]"
             style={{ textShadow: '0 0 30px rgba(212,168,67,0.3)' }}
           >
-            ALL IN
+            德州扑克
           </h1>
           <p className="text-[#555] text-xs mt-1">和朋友来一局德州</p>
         </div>
@@ -165,12 +165,20 @@ export function Login() {
           disabled={!username.trim() || !password || loading}
           className="w-full py-2.5 rounded-xl font-bold text-black bg-gradient-to-r from-[#b8860b] to-[#d4a843] disabled:opacity-40 disabled:cursor-not-allowed transition-opacity text-sm"
         >
-          {loading ? '登录中...' : '登录 / 注册'}
+          {loading ? '登录中...' : '登录'}
         </button>
 
         <p className="text-[10px] text-[#444] text-center">
-          账户不存在时将自动注册
+          仅限受邀账号登录 · 账号请联系管理员创建
         </p>
+
+        {/* 免责声明 */}
+        <div className="text-[18px] leading-relaxed text-[#fff] text-center border-t border-[#1a1a1a] pt-3">
+          <p className="font-bold mb-0.5">免责声明</p>
+          <p>本平台仅为朋友间休闲娱乐用途，严禁任何形式的赌博行为；</p>
+          <p>游戏筹码均为虚拟道具，不可兑换现金、财物或转让；</p>
+          <p>系统将记录登录IP用于安全审计；请理性游戏，未成年人请勿使用。</p>
+        </div>
       </form>
       <InstallBanner />
     </div>

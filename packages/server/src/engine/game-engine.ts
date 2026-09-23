@@ -30,6 +30,7 @@ export class GameEngine {
   private minRaise = 0
   private smallBlind = 10
   private bigBlind = 20
+  private betCap = 0 // 免上头：单手牌最大投入上限，0=不限制
 
   constructor(smallBlind = 10, bigBlind = 20) {
     this.smallBlind = smallBlind
@@ -44,6 +45,11 @@ export class GameEngine {
       turnDeadline: 0,
       sidePots: [],
     }
+  }
+
+  /** 设置单手投入上限（免上头保护），须不小于大盲注才生效 */
+  setBetCap(cap: number): void {
+    this.betCap = cap > 0 && cap >= this.bigBlind ? cap : 0
   }
 
   addPlayer(seatIndex: number, playerId: string, chips: number): void {
@@ -153,7 +159,13 @@ export class GameEngine {
 
       case 'raise': {
         if (amount === undefined) return false
-        const totalRaiseTarget = amount
+        // 免上头：本手总投入不得超过上限
+        let totalRaiseTarget = amount
+        if (this.betCap > 0) {
+          const allowedAdditional = this.betCap - player.totalBet
+          if (allowedAdditional <= 0) return false
+          totalRaiseTarget = Math.min(totalRaiseTarget, player.bet + allowedAdditional)
+        }
         const additionalNeeded = totalRaiseTarget - player.bet
         if (additionalNeeded <= 0) return false
 
@@ -184,12 +196,16 @@ export class GameEngine {
       }
 
       case 'allIn': {
-        const allInAmount = player.chips
+        // 免上头：全下也受单手投入上限约束，超出部分留到下一手
+        let allInAmount = player.chips
+        if (this.betCap > 0) {
+          allInAmount = Math.min(allInAmount, this.betCap - player.totalBet)
+        }
         if (allInAmount <= 0) return false
         player.bet += allInAmount
         player.totalBet += allInAmount
-        player.chips = 0
-        player.status = 'allIn'
+        player.chips -= allInAmount
+        if (player.chips === 0) player.status = 'allIn'
 
         if (player.bet > this.currentBet) {
           const raiseBy = player.bet - this.currentBet

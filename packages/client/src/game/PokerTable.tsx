@@ -263,7 +263,12 @@ export function PokerTable() {
   const callAmount = Math.min(currentBet - myBet, myChips)
   // minRaise from server = minimum raise INCREMENT, effectiveMinRaise = minimum TOTAL bet to raise
   const effectiveMinRaise = currentBet + minRaise
-  const maxRaiseBet = myBet + myChips // max total bet = already bet + remaining chips
+  // 免上头：单手投入上限（0=不限制），滑条最大值与全下预设都要受约束
+  const betCap = room?.config?.betCap ?? 0
+  const prevStreetsBet = (myHand?.totalBet ?? 0) - myBet
+  const maxRaiseBet = betCap > 0
+    ? Math.min(myBet + myChips, Math.max(myBet, betCap - prevStreetsBet))
+    : myBet + myChips // max total bet = already bet + remaining chips
   const effectiveRaise = Math.min(Math.max(raiseAmount, effectiveMinRaise), maxRaiseBet)
   const halfPot = Math.max(effectiveMinRaise, Math.floor(pot / 2) + currentBet)
   const fullPot = Math.max(effectiveMinRaise, pot + currentBet)
@@ -378,22 +383,22 @@ export function PokerTable() {
           <div className="relative w-64 h-full bg-[#1c1b1b] border-r border-white/10 flex flex-col shadow-2xl animate-[slideIn_0.2s_ease-out]">
             {/* Header */}
             <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between">
-              <span className="font-headline font-bold text-[#e9c349] text-lg">Menu</span>
+              <span className="font-headline font-bold text-[#e9c349] text-lg">菜单</span>
               <button onClick={() => setMenuOpen(false)} className="text-white/40 hover:text-white/80 text-xl">&times;</button>
             </div>
 
             {/* Room info */}
             <div className="px-4 py-3 border-b border-white/5">
-              <div className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Room</div>
+              <div className="text-[10px] text-white/30 uppercase tracking-wider mb-1">房间</div>
               <div className="font-mono text-[#e9c349] text-lg tracking-widest">{room?.code}</div>
               <div className="text-[11px] text-white/40 mt-1">
-                {players.length} players · {room?.config.blinds.small}/{room?.config.blinds.big} blinds
+                {players.length} 人 · 盲注 {room?.config.blinds.small}/{room?.config.blinds.big}
               </div>
             </div>
 
             {/* Player list */}
             <div className="px-4 py-3 border-b border-white/5 flex-1 overflow-y-auto">
-              <div className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Players</div>
+              <div className="text-[10px] text-white/30 uppercase tracking-wider mb-2">玩家</div>
               <div className="space-y-2">
                 {players.map(p => {
                   const pa = (p.avatar || '👤:#888').split(':')
@@ -414,7 +419,7 @@ export function PokerTable() {
                 onClick={() => { setMenuOpen(false); leaveRoom() }}
                 className="w-full py-2.5 rounded-lg bg-red-600/20 border border-red-500/30 text-red-400 font-headline font-bold text-sm uppercase hover:bg-red-600/30 transition-colors"
               >
-                Leave Room
+                离开房间
               </button>
             </div>
           </div>
@@ -441,7 +446,7 @@ export function PokerTable() {
                       <span className="text-xl">{winnerEmoji}</span>
                       <div className="flex items-start gap-1">
                         <span className="font-headline font-extrabold text-sm text-[#e9c349] leading-tight">
-                          {winnerPlayer.nickname} wins!
+                          {winnerPlayer.nickname} 获胜！
                         </span>
                         <span className="text-[#96d59b] text-sm font-bold leading-tight">
                           +{winAmount.toLocaleString()}
@@ -451,7 +456,7 @@ export function PokerTable() {
                   ) : pot > 0 ? (
                     <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-5 py-1.5 rounded-full border border-[#e9c349]/20">
                       <span className="font-headline font-extrabold text-sm text-[#e9c349] tracking-tighter">
-                        POT : ${pot.toLocaleString()}
+                        底池：${pot.toLocaleString()}
                       </span>
                     </div>
                   ) : null}
@@ -613,9 +618,9 @@ export function PokerTable() {
                     ? 'bg-[#96d59b] text-[#131313]'
                     : 'border border-[#96d59b] text-[#96d59b] hover:bg-[#96d59b]/10'
                 }`}
-              >{amIReady ? '✓ Ready' : 'Ready'}</button>
+              >{amIReady ? '✓ 已准备' : '准备'}</button>
               <span className="text-[10px] text-white/30">
-                {players.filter(p => p.isReady && !p.isAI).length}/{players.filter(p => !p.isAI).length} ready
+                {players.filter(p => p.isReady && !p.isAI).length}/{players.filter(p => !p.isAI).length} 已准备
               </span>
             </div>
           ) : (
@@ -626,20 +631,20 @@ export function PokerTable() {
                   onClick={() => sendAction('fold')}
                   disabled={!isMyTurn}
                   className="h-8 px-3 sm:px-4 rounded-lg bg-[#2a2a2a] text-[#e5e2e1]/80 font-headline font-bold text-[11px] sm:text-xs uppercase disabled:opacity-25"
-                >Fold</button>
+                >弃牌</button>
 
                 {canCheck ? (
                   <button
                     onClick={() => sendAction('check')}
                     disabled={!isMyTurn}
                     className="h-8 px-3 sm:px-4 rounded-lg border border-[#96d59b] text-[#96d59b] font-headline font-bold text-[11px] sm:text-xs uppercase disabled:opacity-25"
-                  >Check</button>
+                  >过牌</button>
                 ) : callAmount > 0 ? (
                   <button
                     onClick={() => sendAction('call')}
                     disabled={!isMyTurn}
                     className="h-8 px-3 sm:px-4 rounded-lg border border-[#96d59b] text-[#96d59b] font-headline font-bold text-[11px] sm:text-xs uppercase disabled:opacity-25"
-                  >Call <span className="opacity-70">{callAmount}</span></button>
+                  >跟注 <span className="opacity-70">{callAmount}</span></button>
                 ) : null}
 
                 {/* Raise button with popover */}
@@ -648,7 +653,7 @@ export function PokerTable() {
                     onClick={() => isMyTurn && canRaise && setRaiseOpen(!raiseOpen)}
                     disabled={!isMyTurn || !canRaise}
                     className="h-8 px-3 sm:px-4 rounded-lg bg-gradient-to-b from-[#e9c349] to-[#c4a033] text-[#131313] font-headline font-bold text-[11px] sm:text-xs uppercase disabled:opacity-25"
-                  >Raise <span className="opacity-70">{effectiveRaise}</span></button>
+                  >加注 <span className="opacity-70">{effectiveRaise}</span></button>
 
                   {/* Raise panel — pops up above the button */}
                   {raiseOpen && isMyTurn && (
@@ -664,7 +669,7 @@ export function PokerTable() {
                       <p className="text-center text-[#e9c349] font-mono font-bold text-sm mb-2">{effectiveRaise.toLocaleString()}</p>
                       {/* Preset buttons */}
                       <div className="flex gap-1.5 mb-2">
-                        {[{ l: '1/2 Pot', v: halfPot }, { l: 'Pot', v: fullPot }, { l: 'Max', v: maxRaiseBet }].map(({ l, v }) => (
+                        {[{ l: '半池', v: halfPot }, { l: '满池', v: fullPot }, { l: '全下', v: maxRaiseBet }].map(({ l, v }) => (
                           <button key={l} onClick={() => setRaiseAmount(v)}
                             className="flex-1 py-1.5 text-[10px] font-bold rounded-lg bg-white/10 text-white/70 active:bg-white/20"
                           >{l}</button>
@@ -683,7 +688,7 @@ export function PokerTable() {
                   onClick={handleAllIn}
                   disabled={!isMyTurn}
                   className="h-8 px-3 sm:px-4 rounded-lg border border-[#e9c349] text-[#e9c349] font-headline font-bold text-[11px] sm:text-xs uppercase disabled:opacity-25"
-                >All In</button>
+                >全下</button>
               </div>
             </>
           )}

@@ -27,7 +27,7 @@ export type RoomStatus = 'waiting' | 'playing'
 export type ActionType = 'fold' | 'check' | 'call' | 'raise' | 'allIn'
 
 export interface Blinds { small: number; big: number }
-export interface RoomConfig { blinds: Blinds; maxPlayers: number; turnTime: number }
+export interface RoomConfig { blinds: Blinds; maxPlayers: number; turnTime: number; betCap?: number }
 
 export interface PlayerInfo {
   id: string; nickname: string; avatar: string; seatIndex: number;

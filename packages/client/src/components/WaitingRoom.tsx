@@ -74,7 +74,7 @@ export function WaitingRoom() {
     <div className="h-dvh bg-[#0a0a0a] text-white flex flex-col landscape:flex-row overflow-hidden">
       {/* Left panel: room info */}
       <div className="flex flex-col items-center justify-center px-4 py-6 landscape:w-[280px] landscape:min-w-[280px] landscape:border-r landscape:border-[#1a1a1a] landscape:py-4">
-        <p className="text-[10px] uppercase tracking-[0.2em] text-[#b8860b] mb-1">Room Code</p>
+        <p className="text-[10px] uppercase tracking-[0.2em] text-[#b8860b] mb-1">房间码</p>
         <p className="text-3xl font-black tracking-[0.25em] text-[#d4a843] font-mono">{room.code}</p>
         <div className="flex gap-2 mt-3">
           <button

@@ -59,7 +59,7 @@ export function SettleOverlay() {
     <div className="absolute inset-0 flex items-center justify-center bg-black/70 z-50">
       <div className="bg-[#1c1b1b] border border-[#e9c349]/40 rounded-2xl p-6 min-w-[280px] max-w-[360px] text-center shadow-2xl">
         {/* Header */}
-        <div className="text-[#e9c349] text-sm font-headline font-bold mb-3">🏆 WINNER</div>
+        <div className="text-[#e9c349] text-sm font-headline font-bold mb-3">🏆 获胜</div>
 
         {/* Winner avatar */}
         <div className="text-4xl mb-2">{winnerEmoji}</div>
