@@ -16,7 +16,6 @@
     "bcryptjs": "^3.0.3",
     "hono": "^4.6.20",
     "jsonwebtoken": "^9.0.3",
-    "livekit-server-sdk": "^2.9.4",
     "nanoid": "^5.0.9",
     "poker-evaluator": "^2.1.1",
     "postgres": "^3.4.9",

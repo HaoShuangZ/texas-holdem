@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { AccessToken } from 'livekit-server-sdk'
 import type { RoomManager } from '../rooms/room-manager'
 import type { RoomConfig } from '@texas-holdem/shared'
 import type { UserRepository } from '../db/user-repository'
@@ -199,27 +198,6 @@ export function createApi(roomManager: RoomManager, userRepo: UserRepository) {
       maxPlayers: state.config.maxPlayers,
       status: state.status,
     })
-  })
-
-  app.get('/api/rooms/:roomId/voice-token', async (c) => {
-    const roomId = c.req.param('roomId')
-    const playerId = c.req.query('playerId') ?? 'anonymous'
-    const nickname = c.req.query('nickname') ?? playerId
-
-    const apiKey = process.env.LIVEKIT_API_KEY
-    const apiSecret = process.env.LIVEKIT_API_SECRET
-    const wsUrl = process.env.LIVEKIT_URL
-
-    if (!apiKey || !apiSecret || !wsUrl) {
-      return c.json({ token: '', wsUrl: '' })
-    }
-
-    const token = new AccessToken(apiKey, apiSecret, {
-      identity: playerId,
-      name: nickname,
-    })
-    token.addGrant({ room: roomId, roomJoin: true, canPublish: true, canSubscribe: true })
-    return c.json({ token: await token.toJwt(), wsUrl })
   })
 
   return app

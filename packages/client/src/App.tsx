@@ -46,7 +46,7 @@ export function App() {
     case 'room-setup':
       return <Lobby />
     case 'waiting':
-      return <Suspense fallback={<LoadingScreen hint="正在加载语音相关功能..." />}><WaitingRoom /></Suspense>
+      return <Suspense fallback={<LoadingScreen hint="正在加载房间..." />}><WaitingRoom /></Suspense>
     case 'game':
       return <Suspense fallback={<div />}><PokerTable /></Suspense>
     default:

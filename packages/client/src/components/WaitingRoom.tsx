@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useGameStore } from '../stores/game-store'
-import { requestMicPermission } from '../hooks/use-voice'
 
 interface AIPersonality {
   id: string
@@ -19,11 +18,6 @@ export function WaitingRoom() {
 
   const [aiPersonalities, setAiPersonalities] = useState<AIPersonality[]>([])
   const [showAIPicker, setShowAIPicker] = useState(false)
-
-  // Pre-request mic permission before game enters fullscreen
-  useEffect(() => {
-    requestMicPermission()
-  }, [])
 
   // Request AI personalities list on mount
   useEffect(() => {
