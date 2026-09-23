@@ -3,6 +3,7 @@ import { useGameStore } from '../stores/game-store'
 
 export function Lobby() {
   const [roomCode, setRoomCode] = useState('')
+  const [buyIn, setBuyIn] = useState('10000')
   const [creating, setCreating] = useState(false)
   const user = useGameStore((s) => s.user)
   const createRoom = useGameStore((s) => s.createRoom)
@@ -19,11 +20,17 @@ export function Lobby() {
 
   const handleCreate = async () => {
     if (creating) return
+    const minBalance = Math.max(0, Math.floor(Number(buyIn) || 0))
+    if (user && minBalance > 0 && user.chips_balance < minBalance) {
+      alert(`你的余额为 ${user.chips_balance.toLocaleString()}，低于对局金额 ${minBalance.toLocaleString()}`)
+      return
+    }
     setCreating(true)
     const result = await createRoom({
       blinds: { small: 10, big: 20 },
       maxPlayers: 6,
       turnTime: 30,
+      minBalance,
     })
     if (result.error) {
       setCreating(false)
@@ -65,6 +72,22 @@ export function Lobby() {
             >
               退出
             </button>
+          </div>
+
+          {/* Buy-in amount */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] text-[#8a7a5a]">对局金额（进入门槛）</span>
+              <span className="text-[10px] text-[#555] font-mono">我的余额 {user.chips_balance.toLocaleString()}</span>
+            </div>
+            <input
+              type="number"
+              min={0}
+              value={buyIn}
+              onChange={(e) => setBuyIn(e.target.value)}
+              placeholder="0 表示不限制"
+              className="w-full bg-[#111] border border-[#2a2a2a] rounded-xl px-4 py-2.5 text-[#d4a843] placeholder-[#444] text-center font-mono outline-none focus:border-[#b8860b] transition-colors text-sm"
+            />
           </div>
 
           {/* Create room */}

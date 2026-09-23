@@ -13,7 +13,7 @@ await initDb()
 const userRepo = new UserRepository()
 const roomManager = new RoomManager()
 const wsHandler = new WsHandler(roomManager, userRepo)
-const api = createApi(roomManager, userRepo)
+const api = createApi(roomManager, userRepo, wsHandler)
 
 // In production, serve the built client files
 const clientDist = resolve(process.cwd(), '..', 'client', 'dist')

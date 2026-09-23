@@ -3,10 +3,11 @@ import { cors } from 'hono/cors'
 import type { RoomManager } from '../rooms/room-manager'
 import type { RoomConfig } from '@texas-holdem/shared'
 import type { UserRepository } from '../db/user-repository'
+import type { WsHandler } from '../ws/ws-handler'
 import { signToken, verifyToken } from '../auth/jwt'
 import { adminHtml } from '../admin-page'
 
-export function createApi(roomManager: RoomManager, userRepo: UserRepository) {
+export function createApi(roomManager: RoomManager, userRepo: UserRepository, wsHandler?: WsHandler) {
   const app = new Hono()
 
   app.use('*', cors())
@@ -89,6 +90,8 @@ export function createApi(roomManager: RoomManager, userRepo: UserRepository) {
       await userRepo.setChips(c.req.param('id'), target)
       if (before && target !== before.chips_balance) {
         await userRepo.logChips(before.id, before.username, target - before.chips_balance, target, '管理员调整', '')
+        // 若该玩家在对局中，同步对局内筹码，避免结算写回覆盖本次修改
+        wsHandler?.applyAdminChips(before.id, target)
       }
       return c.json({ ok: true })
     } catch (e: any) {

@@ -42,6 +42,18 @@ export function PlayerSeat({
 
   const avatarEl = (
     <div className="relative flex-shrink-0" style={{ width: size + strokeWidth * 2, height: size + strokeWidth * 2 }}>
+      {/* Acting pulse glow */}
+      {isCurrentTurn && !isFolded && (
+        <div
+          className="absolute rounded-full animate-act-glow"
+          style={{
+            width: size + strokeWidth * 2 + 8,
+            height: size + strokeWidth * 2 + 8,
+            top: -4, left: -4,
+            border: '2px solid #96d59b',
+          }}
+        />
+      )}
       {/* Countdown ring (SVG) */}
       {isCurrentTurn && !isFolded && (
         <svg

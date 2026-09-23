@@ -101,6 +101,9 @@ export class WsHandler {
       case 'list-ai-personalities':
         this.send(ws, 'ai-personalities', { personalities: this.aiManager.getPersonalities() })
         break
+      case 'chat':
+        this.onChat(conn, data as ClientEvents['chat'])
+        break
       // rebuy removed — chips = balance
       default:
         this.send(ws, 'error', { message: `Unknown event: ${event}` })
@@ -137,9 +140,16 @@ export class WsHandler {
       // Check balance for new joins
       if (!isAlreadyInRoom && !this.aiManager.isAI(conn.playerId)) {
         const user = await this.userRepo.findById(conn.playerId)
-        if (user && user.chips_balance <= 0) {
-          this.send(ws, 'error', { message: '余额不足，无法加入游戏' })
-          return
+        if (user) {
+          const minBalance = room.config.minBalance ?? 0
+          if (user.chips_balance <= 0) {
+            this.send(ws, 'error', { message: '余额不足，无法加入游戏' })
+            return
+          }
+          if (user.chips_balance < minBalance) {
+            this.send(ws, 'error', { message: `余额不足，本房间对局金额为 ${minBalance.toLocaleString()}，你的余额为 ${user.chips_balance.toLocaleString()}` })
+            return
+          }
         }
       }
 
@@ -182,6 +192,45 @@ export class WsHandler {
       }
     } catch (err: any) {
       this.send(ws, 'error', { message: err.message ?? 'Failed to join room' })
+    }
+  }
+
+  // --- Chat ---
+  private onChat(conn: PlayerConnection, data: ClientEvents['chat']): void {
+    if (!conn.roomId) return
+    const text = (data.text ?? '').toString().slice(0, 100).trim()
+    if (!text) return
+    const room = this.roomManager.getRoom(conn.roomId)
+    if (!room) return
+    const player = room.players.get(conn.playerId)
+    if (!player) return
+    this.broadcastToRoom(conn.roomId, 'chat-message', {
+      playerId: conn.playerId,
+      nickname: player.nickname,
+      avatar: player.avatar,
+      text,
+      isQuick: !!data.isQuick,
+      ts: Date.now(),
+    })
+  }
+
+  /** 管理后台调整余额时同步对局内筹码，保证结算写回一致（不被覆盖） */
+  applyAdminChips(playerId: string, chips: number): void {
+    const roomId = this.roomManager.findRoomIdByPlayerId(playerId)
+    if (!roomId) return
+    const room = this.roomManager.getRoom(roomId)
+    if (!room) return
+    const player = room.players.get(playerId)
+    if (!player) return
+    const target = Math.max(0, Math.floor(chips) || 0)
+    player.chips = target
+    const engine = room.engine
+    if (engine) {
+      engine.setPlayerChips(playerId, target)
+    }
+    const state = this.roomManager.getRoomState(roomId)
+    if (state) {
+      this.broadcastToRoom(roomId, 'room-state', { room: state, hands: engine?.getPlayerHandStates() ?? [] })
     }
   }
 

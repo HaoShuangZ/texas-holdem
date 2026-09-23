@@ -16,6 +16,39 @@ export interface AuthUser {
   games_won: number
 }
 
+// --- 聊天 ---
+export interface ChatMsg {
+  playerId: string
+  nickname: string
+  avatar: string
+  text: string
+  isQuick: boolean
+  ts: number
+}
+
+// 快捷语音（参考欢乐斗地主风格）
+export const QUICK_MESSAGES = [
+  { emoji: '🌸', text: '快点吧，我等到花儿都谢了！' },
+  { emoji: '😄', text: '大家好，很高兴认识各位！' },
+  { emoji: '👍', text: '你的牌打得太好了！' },
+  { emoji: '⚔️', text: '不要走，决战到天亮！' },
+  { emoji: '🃏', text: '底牌亮出来让大家瞧瞧！' },
+  { emoji: '🤐', text: '不要吵，专心打牌！' },
+  { emoji: '🍀', text: '风水轮流转，下次你赢！' },
+  { emoji: '😎', text: 'Sorry 啦，我的牌就是大！' },
+  { emoji: '💪', text: '稳住，我们能赢！' },
+  { emoji: '🤝', text: '手气不错，再来一把！' },
+]
+
+// --- 局内账单 ---
+export interface BillEntry {
+  hand: number
+  type: string   // 小盲/大盲/跟注/加注/全下/获胜
+  amount: number // 正负筹码
+  balance?: number // 变动后对局筹码
+  ts: number
+}
+
 interface GameState {
   // Auth
   token: string | null
@@ -46,6 +79,11 @@ interface GameState {
   lastAction: { seatIndex: number; type: string } | null
   potCollectTarget: number | null
 
+  // Chat & bill
+  chatMessages: ChatMsg[]
+  billEntries: BillEntry[]
+  handNumber: number
+
   // Screen
   screen: Screen
 }
@@ -67,6 +105,8 @@ interface GameActions {
   clearSettle: () => void
   clearAnimations: () => void
   updateAvatar: (avatar: string) => Promise<void>
+  sendChat: (text: string, isQuick?: boolean) => void
+  clearChatAndBill: () => void
 }
 
 const TOKEN_KEY = 'texas-holdem-token'
@@ -110,6 +150,9 @@ const initialState: GameState = {
   revealedCards: new Map(),
   lastAction: null,
   potCollectTarget: null,
+  chatMessages: [],
+  billEntries: [],
+  handNumber: 0,
   screen: 'login',
 }
 
@@ -225,6 +268,19 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           return p
         })
 
+        // 盲注记账
+        const myId = get().user?.id
+        const mySeat2 = players.find((p) => p.id === myId)?.seatIndex
+        const billEntries = [...state.billEntries]
+        if (mySeat2 !== undefined) {
+          const handNo = (state.handNumber ?? 0) + 1
+          if (mySeat2 === sbSeat) {
+            billEntries.push({ hand: handNo, type: '小盲', amount: -blinds.small, balance: (players.find((p) => p.seatIndex === sbSeat)?.chips ?? 0) - blinds.small, ts: Date.now() })
+          } else if (mySeat2 === bbSeat) {
+            billEntries.push({ hand: handNo, type: '大盲', amount: -blinds.big, balance: (players.find((p) => p.seatIndex === bbSeat)?.chips ?? 0) - blinds.big, ts: Date.now() })
+          }
+        }
+
         return {
           screen: 'game' as Screen,
           myCards: null,
@@ -237,6 +293,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           lastAction: null,
           potCollectTarget: null,
           revealedCards: new Map(),
+          handNumber: (state.handNumber ?? 0) + 1,
+          billEntries,
           room: {
             ...state.room,
             players: updatedPlayers,
@@ -301,12 +359,20 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       })
     })
 
-    wsClient.on('player-action', ({ seatIndex, type, pot, chips }) => {
+    wsClient.on('player-action', ({ seatIndex, type, amount, pot, chips }) => {
       if (type === 'fold') sounds.play('fold')
       else if (type === 'check') sounds.play('check')
       else sounds.play('chips')
 
       set((state) => {
+        // 我方下注记账（弃牌/过牌无金额）
+        let billEntries = state.billEntries
+        const myId2 = get().user?.id
+        const meSeat = state.room?.players.find((p) => p.id === myId2)?.seatIndex
+        if (meSeat === seatIndex && amount > 0 && state.room?.game) {
+          const typeLabel = type === 'raise' ? '加注' : type === 'allIn' ? '全下' : '跟注'
+          billEntries = [...billEntries, { hand: state.handNumber, type: typeLabel, amount: -amount, balance: chips, ts: Date.now() }]
+        }
         if (!state.room?.game) return {}
         const updatedPlayers = state.room.players.map((p) => {
           if (p.seatIndex !== seatIndex) return p
@@ -319,6 +385,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         })
         return {
           lastAction: { seatIndex, type },
+          billEntries,
           room: {
             ...state.room,
             players: updatedPlayers,
@@ -334,8 +401,18 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
     wsClient.on('settle', ({ winners, showCards }) => {
       sounds.play('win')
-      const winnerSeat = winners.length > 0 ? winners[0].seatIndex : null
-      set({ settleWinners: winners, settleShowCards: showCards, potCollectTarget: winnerSeat })
+      set((state) => {
+        const winnerSeat = winners.length > 0 ? winners[0].seatIndex : null
+        // 我方获胜记账（分池金额合计）
+        let billEntries = state.billEntries
+        const myId3 = get().user?.id
+        const meSeat = state.room?.players.find((p) => p.id === myId3)?.seatIndex
+        const myWin = winners.filter((w) => w.seatIndex === meSeat).reduce((s, w) => s + w.amount, 0)
+        if (myWin > 0) {
+          billEntries = [...billEntries, { hand: state.handNumber, type: '获胜', amount: myWin, ts: Date.now() }]
+        }
+        return { settleWinners: winners, settleShowCards: showCards, potCollectTarget: winnerSeat, billEntries }
+      })
     })
 
     wsClient.on('cards-revealed', ({ seatIndex, cards }) => {
@@ -344,6 +421,16 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         revealedCards.set(seatIndex, cards)
         return { revealedCards }
       })
+    })
+
+    wsClient.on('chat-message', (msg) => {
+      set((state) => ({ chatMessages: [...state.chatMessages.slice(-99), msg] }))
+      // 快捷语音播报（TTS），按玩家生成不同音高
+      if (msg.isQuick) {
+        let hash = 0
+        for (let i = 0; i < msg.playerId.length; i++) hash = (hash * 31 + msg.playerId.charCodeAt(i)) | 0
+        sounds.speak(msg.text, 0.85 + (Math.abs(hash) % 8) * 0.1)
+      }
     })
 
     wsClient.on('error', ({ message }) => {
@@ -360,7 +447,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         return
       }
 
-      if (message === '筹码归零，已离开牌桌' || message === '余额不足，无法加入游戏') {
+      if (message.startsWith('余额不足')) {
         clearRoomCode()
         alert(message)
         set({ room: null, screen: 'lobby' })
@@ -402,7 +489,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       const user = get().user!
       get().wsClient?.send('join-room', { code: data.code, nickname: user.nickname, avatar: user.avatar })
       saveRoomCode(data.code)
-      set({ room: null, screen: 'waiting' })
+      set({ room: null, screen: 'waiting', chatMessages: [], billEntries: [], handNumber: 0 })
       return { code: data.code }
     } catch {
       return { error: '网络错误' }
@@ -414,7 +501,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     if (!user) return
     get().wsClient?.send('join-room', { code, nickname: user.nickname, avatar: user.avatar })
     saveRoomCode(code)
-    set({ room: null, screen: 'waiting' })
+    set({ room: null, screen: 'waiting', chatMessages: [], billEntries: [], handNumber: 0 })
   },
 
   tryReconnect: () => {
@@ -476,6 +563,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       currentTurn: null,
       turnDeadline: null,
       minRaise: 0,
+      chatMessages: [],
+      billEntries: [],
+      handNumber: 0,
       currentBet: 0,
       showdownResults: [],
       settleWinners: [],
@@ -517,5 +607,15 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     set((state) => ({
       user: state.user ? { ...state.user, avatar } : null,
     }))
+  },
+
+  sendChat: (text, isQuick = false) => {
+    const t = (text ?? '').trim()
+    if (!t) return
+    get().wsClient?.send('chat', { text: t.slice(0, 100), isQuick })
+  },
+
+  clearChatAndBill: () => {
+    set({ chatMessages: [], billEntries: [], handNumber: 0 })
   },
 }))

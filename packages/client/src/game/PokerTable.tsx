@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/game-store'
 import { SettleOverlay } from '../components/SettleOverlay'
+import { ChatPanel } from '../components/ChatPanel'
 import { PlayingCard } from './PlayingCard'
 import { PlayerSeat } from './PlayerSeat'
 import { ChipPile } from './ChipPile'
@@ -277,6 +278,17 @@ export function PokerTable() {
   const toggleReady = useGameStore((s) => s.toggleReady)
   const [menuOpen, setMenuOpen] = useState(false)
   const [raiseOpen, setRaiseOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState<null | 'chat' | 'bill'>(null)
+  const chatMessages = useGameStore((s) => s.chatMessages)
+
+  // 最近 4 秒内每个玩家的最新消息（用于座位气泡）
+  const nowTs = now
+  const bubbles = new Map<string, string>()
+  for (let i = chatMessages.length - 1; i >= 0; i--) {
+    const m = chatMessages[i]
+    if (nowTs - m.ts > 5000) break
+    if (!bubbles.has(m.playerId)) bubbles.set(m.playerId, m.text)
+  }
 
   const isWaiting = room?.status === 'waiting'
   const amIReady = me?.isReady ?? false
@@ -309,6 +321,30 @@ export function PokerTable() {
           <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
         </svg>
       </button>
+      {/* Chat & bill buttons — top left, next to menu */}
+      <div className="fixed top-3 left-[54px] z-50 flex gap-1.5">
+        <button
+          onClick={() => setChatOpen('chat')}
+          className="w-9 h-9 rounded-lg bg-black/50 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/70">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setChatOpen('bill')}
+          className="w-9 h-9 rounded-lg bg-black/50 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/70">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <line x1="14" y1="2" x2="14" y2="8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+        </button>
+      </div>
+      {/* Chat / Bill panel */}
+      {chatOpen && (
+        <ChatPanel initialTab={chatOpen} onClose={() => setChatOpen(null)} />
+      )}
       {/* Sidebar overlay */}
       {menuOpen && (
         <div className="fixed inset-0 z-[100] flex">
@@ -478,25 +514,32 @@ export function PokerTable() {
               : 0
 
             return (
-              <PlayerSeat
-                key={seatIndex}
-                player={player}
-                isCurrentTurn={currentTurn === seatIndex}
-                cards={cards}
-                bet={hand?.bet ?? 0}
-                isDealer={dealerSeat === seatIndex}
-                timerProgress={seatTimerProgress}
-                side={side}
-                style={{ top: position.top, left: position.left }}
-              />
+              <div key={seatIndex} className="absolute" style={{ top: position.top, left: position.left }}>
+                {/* Chat bubble */}
+                {bubbles.has(player.id) && (
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-9 z-30 max-w-[150px] whitespace-normal break-words bg-white text-[#131313] text-[10px] leading-snug px-2 py-1 rounded-xl rounded-br-none shadow-lg pointer-events-none">
+                    {bubbles.get(player.id)}
+                  </div>
+                )}
+                <PlayerSeat
+                  player={player}
+                  isCurrentTurn={currentTurn === seatIndex}
+                  cards={cards}
+                  bet={hand?.bet ?? 0}
+                  isDealer={dealerSeat === seatIndex}
+                  timerProgress={seatTimerProgress}
+                  side={side}
+                  style={{ top: 0, left: 0 }}
+                />
+              </div>
             )
           })}
         </div>
       </div>
 
       {/* Bottom HUD — single thin row */}
-      <div className="flex-shrink-0 bg-[#131313]/95 border-t border-white/10 px-2 sm:px-4 h-[52px] flex items-center">
-        <div className="w-full max-w-5xl mx-auto flex items-center gap-2 sm:gap-3">
+      <div className="flex-shrink-0 bg-[#131313]/95 border-t border-white/10 px-2 sm:px-4 h-[52px] flex items-center relative">
+        <div className="w-full max-w-5xl mx-auto flex items-center gap-2 sm:gap-3 relative">
           {/* Avatar with countdown ring */}
           {(() => {
             const avatarSize = 32
@@ -559,6 +602,16 @@ export function PokerTable() {
           ) : (
             /* Game action buttons */
             <>
+              {isMyTurn && (
+                <div className="absolute -top-9 left-1/2 -translate-x-1/2 animate-act-glow whitespace-nowrap rounded-full border border-[#96d59b]/60 bg-[#96d59b]/15 px-4 py-1 text-[11px] font-bold text-[#96d59b]">
+                  轮到你了，请操作！
+                </div>
+              )}
+              {me && bubbles.has(me.id) && (
+                <div className="absolute -top-[72px] right-2 z-30 max-w-[180px] whitespace-normal break-words bg-white text-[#131313] text-[10px] leading-snug px-2 py-1 rounded-xl rounded-tr-none shadow-lg pointer-events-none">
+                  {bubbles.get(me.id)}
+                </div>
+              )}
               <div className="flex gap-1 sm:gap-1.5 items-center flex-1 justify-center">
                 <button
                   onClick={() => sendAction('fold')}

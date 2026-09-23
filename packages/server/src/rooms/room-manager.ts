@@ -176,6 +176,14 @@ export class RoomManager {
     return this.rooms.get(roomId)
   }
 
+  /** 查找玩家所在房间（用于管理后台同步对局内筹码） */
+  findRoomIdByPlayerId(playerId: string): string | undefined {
+    for (const [id, room] of this.rooms) {
+      if (room.players.has(playerId)) return id
+    }
+    return undefined
+  }
+
   setHostInfo(roomId: string, nickname: string, avatar: string): void {
     const room = this.rooms.get(roomId)
     if (!room) return

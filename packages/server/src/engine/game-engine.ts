@@ -68,6 +68,19 @@ export class GameEngine {
     this.players.delete(seatIndex)
   }
 
+  /** 管理员调整对局中玩家筹码（结算写回时保持一致，避免被覆盖） */
+  setPlayerChips(playerId: string, chips: number): boolean {
+    const target = Math.max(0, Math.floor(chips) || 0)
+    for (const p of this.players.values()) {
+      if (p.playerId === playerId) {
+        p.chips = target
+        if (target > 0 && p.status === 'allIn') p.status = 'active'
+        return true
+      }
+    }
+    return false
+  }
+
   startHand(dealerSeat: number): void {
     this.state.id = nanoid()
     this.state.phase = 'preflop'

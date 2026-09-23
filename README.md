@@ -18,6 +18,15 @@ A full-stack, real-time multiplayer Texas Hold'em poker game with AI opponents a
   <em>Login &nbsp;·&nbsp; Lobby &nbsp;·&nbsp; Game Table</em>
 </p>
 
+## What's New (2026-09-23)
+
+- **In-game Chat & Quick Voice Lines** — New chat panel with free-form messaging plus 10 quick voice lines (Dou Dizhu style, e.g. "Hurry up, I've waited till the flowers wilted!"), spoken via browser TTS with a distinct voice pitch per player; message bubbles pop up next to player seats in real time
+- **In-game Chip Ledger** — Real-time bill panel tracking every blind/call/raise/all-in/win with hand number, amount and resulting balance, plus summary of current balance / total wagered / net P/L
+- **Minimum Balance Gate** — Room creator can set a minimum balance (entry stake); players with insufficient balance cannot join the room
+- **Turn Indicator Enhancement** — The acting player's avatar now pulses with a green glow visible to everyone; "Your turn!" banner plus alert sound when it's your move
+- **Admin Balance Sync** — Balance changes made in the admin panel now sync instantly to in-room/in-game chips, so settlement no longer overwrites admin adjustments
+- **Removed Voice Call** — LiveKit voice call feature removed (mic/speaker buttons, voice-token endpoint and dependencies cleaned up)
+
 ## Features
 
 - **Real-time Multiplayer** — WebSocket-based, supports 2–8 players per room

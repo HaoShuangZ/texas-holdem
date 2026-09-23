@@ -10,6 +10,7 @@ export interface ClientEvents {
   'add-ai': { personalityId: string }
   'remove-ai': { playerId: string }
   'list-ai-personalities': {}
+  'chat': { text: string; isQuick: boolean }
 }
 
 export interface ServerEvents {
@@ -26,6 +27,7 @@ export interface ServerEvents {
   'cards-revealed': { seatIndex: number; cards: [Card, Card] }
   'error': { message: string }
   'ai-personalities': { personalities: { id: string; name: string; avatar: string; description: string }[] }
+  'chat-message': { playerId: string; nickname: string; avatar: string; text: string; isQuick: boolean; ts: number }
 }
 
 export interface ShowdownResult { seatIndex: number; cards: [Card, Card]; handRank: HandRank; handName: string }
